@@ -3,11 +3,12 @@ name = "kasl-plugin-gitlab"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.99"
-description = "Brings the GitLab issues and merge requests assigned to you into kasl's inbox, and today's commits into kasl task find"
+description = "Brings the GitLab issues and merge requests waiting on you into kasl's inbox, and the day's commits into kasl task find"
 authors = ["Kirill Lakhtachev"]
 license = "MIT"
 readme = "README.md"
-keywords = ["kasl", "plugin"]
+repository = "https://github.com/lacodda/kasl-plugin-gitlab"
+keywords = ["kasl", "plugin", "gitlab"]
 categories = ["command-line-utilities"]
 
 exclude = [
@@ -18,12 +19,17 @@ exclude = [
 ]
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+# The same client and TLS kasl itself uses, so a GitLab behind a company CA
+# that kasl reaches is one this plugin reaches too.
+reqwest = { version = "0.13.5", features = ["blocking", "json", "query"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 
 [dev-dependencies]
-assert_cmd = "2"
-predicates = "3"
+assert_cmd = "2.2.2"
+mockito = "1.7.2"
+predicates = "3.1.4"
 
 [lints.rust]
 unsafe_code = "forbid"

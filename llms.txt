@@ -1,6 +1,6 @@
-# Gitlab
+# kasl-plugin-gitlab
 
-> Brings the GitLab issues and merge requests assigned to you into kasl's inbox, and today's commits into kasl task find
+> Brings the GitLab issues and merge requests waiting on you into kasl's inbox, and the day's commits into kasl task find
 
 The repository was started by [lyrn](https://github.com/lacodda/lyrn) as its
 `plugin` form; `lyrn.toml` says which revision of the lacodda line's

@@ -1,21 +1,23 @@
-//! Gitlab: a plugin for kasl, a work activity tracker for the command line.
+//! kasl-plugin-gitlab: GitLab for kasl, a work activity tracker for the
+//! command line.
 //!
 //! Two calls, following the line's plugin convention:
 //!
 //!   kasl-plugin-gitlab --manifest   -> what this plugin offers, as JSON on stdout
-//!   kasl-plugin-gitlab run          -> invocation as JSON on stdin, outcome on stdout
+//!   kasl-plugin-gitlab run          -> invocation as JSON on stdin, reply on stdout
 //!
-//! It lives for the duration of one call and holds no state. Nothing here
-//! starts a service.
+//! It answers four requests: `list_issues`, `transition` and `comment` make it
+//! an inbox source, and `find_tasks` offers the day's commits to
+//! `kasl task find`. It lives for the duration of one call and holds no state.
 
+mod commits;
+mod gitlab;
+mod inbox;
 mod protocol;
+mod reference;
 
-use protocol::{Invocation, Outcome};
-
-/// The protocol version kasl speaks. A plugin declaring anything else is
-/// listed by the host and refused, with the mismatch shown - so the number is
-/// a promise, not a decoration.
-const PROTOCOL_VERSION: u32 = 1;
+use protocol::{Invocation, PROTOCOL_VERSION, Settings};
+use serde_json::{Value, json};
 
 fn main() {
     let argument = std::env::args().nth(1).unwrap_or_default();
@@ -35,20 +37,34 @@ fn main() {
 }
 
 /// What this plugin tells kasl about itself.
-fn manifest() -> String {
-    serde_json::json!({
+fn manifest() -> Value {
+    json!({
         "protocol_version": PROTOCOL_VERSION,
         "name": "gitlab",
         "version": env!("CARGO_PKG_VERSION"),
-        "description": "Brings the GitLab issues and merge requests assigned to you into kasl's inbox, and today's commits into kasl task find",
-        "commands": [{
-            "key": "run",
-            "label": "Run Gitlab",
-            "description": "Brings the GitLab issues and merge requests assigned to you into kasl's inbox, and today's commits into kasl task find",
-            "target": "day"
-        }]
+        "description": "GitLab issues and merge requests waiting on you, and your commits of the day",
+        "requests": ["list_issues", "transition", "comment", "find_tasks"],
+        "settings": [
+            {
+                "key": "url",
+                "label": "GitLab address",
+                "description": "The instance's root, such as https://gitlab.com",
+                "required": true
+            },
+            {
+                "key": "token",
+                "label": "Access token",
+                "description": "A personal access token: the api scope lets kasl start, close and comment; read_api only reads",
+                "secret": true,
+                "required": true
+            },
+            {
+                "key": "start_label",
+                "label": "Label that marks work started",
+                "description": "Added by `kasl inbox start`, and shown as the status of work that carries it; leave empty if your team has none"
+            }
+        ]
     })
-    .to_string()
 }
 
 fn run() {
@@ -56,57 +72,80 @@ fn run() {
         Ok(invocation) => invocation,
         Err(message) => protocol::fail(&message),
     };
-
-    protocol::emit(answer(&invocation));
+    protocol::emit(&answer(&invocation));
 }
 
-/// The plugin's own work, kept apart from the plumbing so that it can be
-/// tested without a process: everything above reads and writes, this decides.
-///
-/// Replace it with what your plugin is for. The fields it returns under `meta`
-/// are shown under the plugin's message - the host keeps no field a plugin writes.
-fn answer(invocation: &Invocation) -> Outcome {
-    // The host sends the whole row, not an identifier, so the first thing a
-    // plugin does is never a request for data back.
-    let described = invocation.subject_summary();
+/// The reply to one invocation. A failure is the reply's `error`, which kasl
+/// shows as the plugin's own words; the exit code stays for a plugin that
+/// could not understand the call at all.
+fn answer(invocation: &Invocation) -> Value {
+    match handle(invocation) {
+        Ok(reply) => reply,
+        Err(error) => json!({ "error": error }),
+    }
+}
 
-    let mut outcome = Outcome::default();
-    outcome.set("gitlab_seen", serde_json::json!(true));
-    outcome.message = Some(format!("Gitlab ran on {described}."));
-    outcome
+fn handle(invocation: &Invocation) -> Result<Value, String> {
+    let request = invocation.request()?;
+    let settings = Settings::read(&invocation.settings)?;
+    let gitlab = gitlab::Gitlab::new(&settings.url, &settings.token)?;
+    match request {
+        "list_issues" => inbox::list_issues(&gitlab, &settings),
+        "transition" => inbox::transition(&gitlab, &settings, invocation),
+        "comment" => inbox::comment(&gitlab, invocation),
+        "find_tasks" => commits::find_tasks(&gitlab, &invocation.subject),
+        other => Err(format!("this plugin does not answer `{other}`")),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{Value, json};
 
     #[test]
-    fn the_manifest_is_valid_json_and_declares_the_protocol() {
-        let parsed: Value = serde_json::from_str(&manifest()).unwrap();
+    fn the_manifest_declares_the_protocol_and_what_it_answers() {
+        let manifest = manifest();
 
-        assert_eq!(parsed["protocol_version"], json!(PROTOCOL_VERSION));
-        assert_eq!(parsed["name"], json!("gitlab"));
-        assert_eq!(parsed["commands"][0]["target"], json!("day"));
-        assert_eq!(parsed["commands"][0]["key"], json!("run"));
+        assert_eq!(manifest["protocol_version"], json!(PROTOCOL_VERSION));
+        assert_eq!(manifest["name"], json!("gitlab"));
+        assert_eq!(manifest["requests"], json!(["list_issues", "transition", "comment", "find_tasks"]));
     }
 
     #[test]
     fn the_manifest_reports_the_version_the_package_was_built_at() {
         // A hard-coded version would drift from Cargo.toml at the first
         // release and the host would show the wrong number for ever after.
-        let parsed: Value = serde_json::from_str(&manifest()).unwrap();
-
-        assert_eq!(parsed["version"], json!(env!("CARGO_PKG_VERSION")));
+        assert_eq!(manifest()["version"], json!(env!("CARGO_PKG_VERSION")));
     }
 
     #[test]
-    fn an_answer_carries_something_for_the_host_to_merge() {
-        let invocation = Invocation::for_test(json!({"title": "A subject"}));
+    fn the_token_is_a_secret_and_the_label_is_optional() {
+        let manifest = manifest();
+        let settings = manifest["settings"].as_array().unwrap();
+        let setting = |key: &str| settings.iter().find(|setting| setting["key"] == key).unwrap().clone();
 
-        let outcome = answer(&invocation);
+        assert_eq!(setting("token")["secret"], json!(true), "a token never goes to kasl's config file");
+        assert_eq!(setting("url")["required"], json!(true));
+        assert!(setting("start_label").get("required").is_none());
+    }
 
-        assert!(!outcome.meta.is_empty(), "the host would have nothing to record");
-        assert!(outcome.error.is_none());
+    #[test]
+    fn a_request_without_settings_says_what_to_run() {
+        let invocation: Invocation = serde_json::from_value(json!({"protocol_version": 1, "request": "list_issues"})).unwrap();
+
+        let reply = answer(&invocation);
+
+        assert!(reply["error"].as_str().unwrap().contains("kasl plugin setup gitlab"), "{reply}");
+    }
+
+    #[test]
+    fn a_request_it_does_not_answer_is_named() {
+        let invocation: Invocation = serde_json::from_value(json!({
+            "request": "list_projects",
+            "settings": {"url": "https://gitlab.example.com", "token": "t"}
+        }))
+        .unwrap();
+
+        assert!(answer(&invocation)["error"].as_str().unwrap().contains("`list_projects`"));
     }
 }

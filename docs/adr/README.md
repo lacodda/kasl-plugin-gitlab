@@ -8,3 +8,4 @@ earlier one says so; the earlier one is marked superseded rather than deleted.
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
 | [0002](0002-dependabot-is-off.md) | Dependabot is off on purpose | Accepted |
 | [0003](0003-the-plugin-is-a-subprocess.md) | The plugin is a subprocess, not a library | Accepted |
+| [0004](0004-what-kasl-may-do-in-gitlab.md) | What kasl may do in GitLab | Accepted |

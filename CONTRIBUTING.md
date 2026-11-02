@@ -1,4 +1,4 @@
-# Contributing to Gitlab
+# Contributing to kasl-plugin-gitlab
 
 ## The gate
 
@@ -8,16 +8,20 @@ $ cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 
 The same commands CI runs, so a green terminal means a green pull request.
 
-`tests/protocol.rs` runs the built binary the way kasl runs it and holds
-the answers to what the host accepts - a plugin that passes its unit tests and
+`tests/protocol.rs` runs the built binary the way kasl runs it, against a
+stand-in GitLab on a local port, and holds the answers to what the host accepts - a plugin that passes its unit tests and
 fails there is one kasl would list and refuse.
 
 ## Layout
 
 | Path | What lives there |
 | --- | --- |
-| `src/main.rs` | The manifest and the plugin's own work |
-| `src/protocol.rs` | The wire: an invocation in, an outcome out |
+| `src/main.rs` | The manifest, and which request goes where |
+| `src/protocol.rs` | The wire: an invocation in, a reply out, the settings |
+| `src/gitlab.rs` | GitLab's REST API, as much as the plugin asks |
+| `src/inbox.rs` | The inbox source: `list_issues`, `transition`, `comment` |
+| `src/commits.rs` | `find_tasks`: the day's commits for `kasl task find` |
+| `src/reference.rs` | Keys: GitLab's full references, `group/app#14` and `group/app!31` |
 | `tests/protocol.rs` | The plugin run as the host runs it |
 | `assets/` | The mark's three master SVGs |
 | `docs/adr/` | Architecture decisions, newest last |
