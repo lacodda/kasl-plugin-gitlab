@@ -1,0 +1,39 @@
+[package]
+name = "kasl-plugin-gitlab"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+description = "Brings the GitLab issues and merge requests assigned to you into kasl's inbox, and today's commits into kasl task find"
+authors = ["Kirill Lakhtachev"]
+license = "MIT"
+readme = "README.md"
+keywords = ["kasl", "plugin"]
+categories = ["command-line-utilities"]
+
+exclude = [
+    "docs/",
+    ".github/",
+    "cliff.toml",
+    "rustfmt.toml",
+]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+
+# A plugin binary is downloaded far more often than it is built, and it is
+# downloaded once per host installation.
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

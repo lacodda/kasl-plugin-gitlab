@@ -1,0 +1,32 @@
+# How gitlab is released, read by furca's release engine: `furca release
+# plan` says what the next release is and what stands in its way, `furca
+# release run` carries it out - bump, changelog, gate, commit, push, green CI,
+# tag, publish - and checks what went out. `lyrn check` reads it too.
+# Reference: https://lacodda.github.io/furca/reference/release/
+
+[project]
+name = "gitlab"
+changelog = "CHANGELOG.md"
+manifests = ["Cargo.toml"]
+# ADRs record what happened: the versions they name are history.
+as_written = ["docs/adr/"]
+
+[gate]
+commands = [
+    "cargo fmt --check",
+    "cargo clippy --all-targets -- -D warnings",
+    "cargo test",
+]
+
+[ci]
+provider = "github"
+workflow = "ci.yml"
+
+# The archives the host installs the plugin from: the release page has to
+# carry one for every target.
+[page]
+assets = [
+    "kasl-plugin-gitlab-{tag}-x86_64-pc-windows-msvc.zip",
+    "kasl-plugin-gitlab-{tag}-x86_64-unknown-linux-gnu.tar.gz",
+    "kasl-plugin-gitlab-{tag}-aarch64-apple-darwin.tar.gz",
+]
